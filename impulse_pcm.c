@@ -39,7 +39,7 @@ struct channel_context {
 	int impulse_length, impulse_orig_length, rate;
 	float orig_gain, gain;
 
-	int N; /* FFT size, always a power of 2 */
+	int N; /* FFT size */
 	fftwf_complex* impulse_fft;
 	fftwf_complex* pcm_fft;
 	float* pcm_data;
@@ -192,7 +192,14 @@ static int hw_params_callback(snd_pcm_extplug_t* ext, snd_pcm_hw_params_t* param
 			fftwf_destroy_plan(c->fft_to_pcm);
 		}
 
-		c->N = 1 << (int)ceilf(log2f(c->impulse_orig_length + psize + 1));
+		if(c->N == 0) {
+			c->N = 1 << (int)ceilf(log2f(c->impulse_orig_length + psize + 1));
+		} else if(c->N < (c->impulse_orig_length + psize + 1)) {
+			SNDERR("fft_size too small, should be at least %d, expect subpar results", c->impulse_orig_length + psize + 1);
+		} else if(c->N & (c->N - 1)) {
+			SNDERR("fft_size not a power of two, expect subpar performance");
+		}
+
 		c->gain = c->orig_gain / (c->N);
 		c->impulse_fft = fftwf_alloc_complex(c->N/2 + 1);
 		c->pcm_fft = fftwf_alloc_complex(c->N/2 + 1);
@@ -308,10 +315,9 @@ SND_PCM_PLUGIN_DEFINE_FUNC(impulse) {
 	/* Parse impulse.0, impulse.1, etc. options and load impulse data */
 	k = 0;
 	snd_config_for_each(i, next, impulses) {
+		struct channel_context* c = &(pctx->c[k]);
 		snd_config_iterator_t j, next2;
 		snd_config_t* impulse = 0;
-		long rate = 0;
-		double gain = 0.0; /* in dB for now */
 		const char* ipath = "\0";
 
 		impulse = snd_config_iterator_entry(i);
@@ -327,12 +333,23 @@ SND_PCM_PLUGIN_DEFINE_FUNC(impulse) {
 			}
 
 			if(strcmp("rate", id) == 0) {
+				long rate;
 				snd_config_get_integer(m, &rate);
+				c->rate = rate;
 				continue;
 			}
 
 			if(strcmp("gain", id) == 0) {
+				double gain = 0.0;
 				snd_config_get_ireal(m, &gain);
+				c->gain = c->orig_gain = (float)pow(1.12201845430196343559, gain);
+				continue;
+			}
+
+			if(strcmp("fft_length", id) == 0) {
+				long N;
+				snd_config_get_integer(m, &N);
+				c->N = N;
 				continue;
 			}
 
@@ -354,20 +371,17 @@ SND_PCM_PLUGIN_DEFINE_FUNC(impulse) {
 			continue;
 		}
 
-		if(rate == 0) {
+		if(c->rate == 0) {
 			SNDERR("impulse %s has no specified rate", ipath);
 			ret = -EINVAL;
 			goto abort;
 		}
 
-		struct channel_context* c = &(pctx->c[k]);
 		if((ret = copy_impulse_file(ipath, &(c->impulse_data), &(c->impulse_orig_length))) < 0) {
 			goto abort;
 		}
 
 		c->impulse_length = c->impulse_orig_length;
-		c->gain = c->orig_gain = (float)pow(1.12201845430196343559, gain);
-		c->rate = rate;
 		++k;
 	}
 

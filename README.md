@@ -96,6 +96,7 @@ pcm.impulse {
 	#	path "/path/to/center_channel.float32.pcm"
 	#	rate 44100
 	#	gain -20.0
+	#	fft_size 16384 # for experts only, omit for optimal results
 	#}
 }
 pcm.!default {
