@@ -25,13 +25,15 @@ is great for many reasons:
   because of the way convolution filters work, some latency is
   inevitable.
 
+* All sample rates are supported without the need for continous
+  resampling (only the impulse response is resampled, once), which
+  saves system resources during playback.
+
 * No idle use of system resources (the device is normally closed when
-  no application is playing audio)
+  no application is playing audio).
 
 Limitations
 ===========
-
-* No resampling for now, patches welcome
 
 * No control mixer for toggling the filter on/off for now, patches
   welcome
@@ -52,7 +54,7 @@ Limitations
 Compile and install
 ===================
 
-Dependencies: FFTW (both lib and lib32 versions).
+Dependencies: FFTW and libsamplerate (both lib and lib32 versions).
 
 ~~~
 make

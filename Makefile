@@ -1,6 +1,6 @@
 CC?=clang
 CFLAGS=-std=c99 -shared -fPIC -DPIC -Wall -O3
-LDFLAGS=-lasound -lfftw3f -lm
+LDFLAGS=-lasound -lfftw3f -lm -lsamplerate
 
 all: libasound_module_pcm_impulse.so libasound_module_pcm_impulse32.so
 

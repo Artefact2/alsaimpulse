@@ -26,6 +26,8 @@
 #include <complex.h>
 #include <fftw3.h>
 
+#include <samplerate.h>
+
 #include <alsa/asoundlib.h>
 #include <alsa/error.h>
 #include <alsa/pcm_external.h>
@@ -138,8 +140,33 @@ static int hw_params_callback(snd_pcm_extplug_t* ext, snd_pcm_hw_params_t* param
 		}
 
 		if(c->rate != ext->rate) {
-			SNDERR("resampling not implemented yet");
-			return -EINVAL;
+			/* Resample impulse data to hw rate */
+			int ret;
+			double ratio = (double)ext->rate / (double)c->rate;
+			int out_len = (int)ceil(ratio * c->impulse_orig_length);
+			float* out = fftwf_alloc_real(out_len);
+			SRC_DATA d = {
+				.data_in = c->impulse_data,
+				.input_frames = c->impulse_orig_length,
+				.data_out = out,
+				.output_frames = out_len,
+				.src_ratio = ratio,
+			};
+
+			if((ret = src_simple(&d, SRC_SINC_FASTEST, 1)) != 0) {
+				SNDERR("SRC error while resampling impulse: %s", src_strerror(ret));
+				return -EINVAL;
+			}
+
+			/* Normalise amplitude to avoid loudness change after convolution */
+			float gain = 1.f / ratio;
+			for(int i = 0; i < d.output_frames_gen; ++i) {
+				out[i] *= gain;
+			}
+
+			c->impulse_orig_length = d.output_frames_gen;
+			fftwf_free(c->impulse_data);
+			c->impulse_data = out;
 		}
 
 		if(c->impulse_fft) {
