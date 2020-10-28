@@ -32,8 +32,8 @@
 
 struct channel_context {
 	float* impulse_data;
-	int impulse_length;
-	int impulse_orig_length;
+	int impulse_length, impulse_orig_length, rate;
+	float orig_gain, gain;
 
 	int N; /* FFT size, always a power of 2 */
 	fftwf_complex* impulse_fft;
@@ -45,15 +45,10 @@ struct channel_context {
 
 	fftwf_plan pcm_to_fft;
 	fftwf_plan fft_to_pcm;
-
-	float gain;
 };
 
 struct plugin_context {
 	snd_pcm_extplug_t ext;
-	long impulse_rate;
-	float gain;
-
 	struct channel_context c[MAX_CHN];
 };
 
@@ -120,11 +115,6 @@ static snd_pcm_sframes_t transfer_callback(snd_pcm_extplug_t* ext,
 static int hw_params_callback(snd_pcm_extplug_t* ext, snd_pcm_hw_params_t* params) {
 	struct plugin_context* pctx = ext->private_data;
 
-	if(ext->rate != pctx->impulse_rate) {
-		SNDERR("resampling not implemented yet");
-		return -EINVAL;
-	}
-
 	snd_pcm_uframes_t psize;
 	int ret, dir;
 	if((ret = snd_pcm_hw_params_get_period_size_max(params, &psize, &dir)) < 0) {
@@ -142,6 +132,11 @@ static int hw_params_callback(snd_pcm_extplug_t* ext, snd_pcm_hw_params_t* param
 			continue;
 		}
 
+		if(c->rate != ext->rate) {
+			SNDERR("resampling not implemented yet");
+			return -EINVAL;
+		}
+
 		if(c->impulse_fft) {
 			/* XXX: might be overkill to re-do everything */
 			fftwf_free(c->impulse_fft);
@@ -153,7 +148,7 @@ static int hw_params_callback(snd_pcm_extplug_t* ext, snd_pcm_hw_params_t* param
 		}
 
 		c->N = 1 << (int)ceilf(log2f(c->impulse_orig_length + psize + 1));
-		c->gain = pctx->gain / (c->N);
+		c->gain = c->orig_gain / (c->N);
 		c->impulse_fft = fftwf_alloc_complex(c->N/2 + 1);
 		c->pcm_fft = fftwf_alloc_complex(c->N/2 + 1);
 		c->pcm_data = fftwf_alloc_real(c->N);
@@ -212,30 +207,27 @@ SND_PCM_PLUGIN_DEFINE_FUNC(impulse) {
 	snd_config_iterator_t i, next;
 	snd_config_t* slave = 0;
 	snd_config_t* impulses = 0;
-	long rate = 0;
-	double gain = -15.0;
-	int ret;
+	int ret, k;
 
+	/* Parse main plugin options */
 	snd_config_for_each(i, next, conf) {
 		snd_config_t* n = snd_config_iterator_entry(i);
 		const char* id;
 
 		if(snd_config_get_id(n, &id) < 0) continue;
 		if(strcmp("type", id) == 0) continue;
+		if(strcmp("comment", id) == 0) continue;
+		if(strcmp("type", id) == 0) continue;
+		if(strcmp("hint", id) == 0) continue;
 
 		if(strcmp("slave", id) == 0) {
 			slave = n;
 			continue;
 		}
 
-		if(strcmp("impulse_rate", id) == 0) {
-			snd_config_get_integer(n, &rate);
-			continue;
-		}
-
-		if(strcmp("impulses", id) == 0) {
+		if(strcmp("impulse", id) == 0) {
 			if(!snd_config_is_array(n)) {
-				SNDERR("impulses must be of type array");
+				SNDERR("impulse must be of type array");
 				return -EINVAL;
 			}
 
@@ -243,22 +235,12 @@ SND_PCM_PLUGIN_DEFINE_FUNC(impulse) {
 			continue;
 		}
 
-		if(strcmp("gain", id) == 0) {
-			snd_config_get_ireal(n, &gain);
-			continue;
-		}
-
 		SNDERR("unknown config entry: %s", id);
 		return -EINVAL;
 	}
 
-	if(rate == 0) {
-		SNDERR("required config entry impulse_rate is missing");
-		return -EINVAL;
-	}
-
-	if(impulses == 0) {
-		SNDERR("required config entry impulses is missing");
+	if(slave == 0) {
+		SNDERR("no slave config entry found");
 		return -EINVAL;
 	}
 
@@ -268,19 +250,71 @@ SND_PCM_PLUGIN_DEFINE_FUNC(impulse) {
 		return -ENOMEM;
 	}
 
-	unsigned int j = 0;
+	/* Parse impulse.0, impulse.1, etc. options and load impulse data */
+	k = 0;
 	snd_config_for_each(i, next, impulses) {
-		const char* s;
-		snd_config_get_string(snd_config_iterator_entry(i), &s);
-		if(*s && (ret = copy_impulse_file(s, &(pctx->c[j].impulse_data), &(pctx->c[j].impulse_orig_length))) < 0) {
-			return ret;
-		}
-		pctx->c[j].impulse_length = pctx->c[j].impulse_orig_length;
-		++j;
-	}
+		snd_config_iterator_t j, next2;
+		snd_config_t* impulse = 0;
+		long rate = 0;
+		double gain = 0.0; /* in dB for now */
+		const char* ipath = "\0";
 
-	pctx->impulse_rate = rate;
-	pctx->gain = powf(1.12201845430196343559f, gain);
+		impulse = snd_config_iterator_entry(i);
+		snd_config_for_each(j, next2, impulse) {
+			snd_config_t* m = snd_config_iterator_entry(j);
+			const char* id;
+
+			if(snd_config_get_id(m, &id) < 0) continue;
+
+			if(strcmp("path", id) == 0) {
+				snd_config_get_string(m, &ipath);
+				continue;
+			}
+
+			if(strcmp("rate", id) == 0) {
+				snd_config_get_integer(m, &rate);
+				continue;
+			}
+
+			if(strcmp("gain", id) == 0) {
+				snd_config_get_ireal(m, &gain);
+				continue;
+			}
+
+			SNDERR("unknown impulse config entry: %s", id);
+			ret = -EINVAL;
+			goto abort;
+		}
+
+		if(k >= MAX_CHN) {
+			SNDERR("too many impulses specified, maximum is %d channels", MAX_CHN);
+			ret = -EINVAL;
+			goto abort;
+		}
+
+		if(*ipath == 0) {
+			/* No impulse, this means pass through this channel's samples */
+			/* Leave everything as zeroes */
+			++k;
+			continue;
+		}
+
+		if(rate == 0) {
+			SNDERR("impulse %s has no specified rate", ipath);
+			ret = -EINVAL;
+			goto abort;
+		}
+
+		struct channel_context* c = &(pctx->c[k]);
+		if((ret = copy_impulse_file(ipath, &(c->impulse_data), &(c->impulse_orig_length))) < 0) {
+			goto abort;
+		}
+
+		c->impulse_length = c->impulse_orig_length;
+		c->gain = c->orig_gain = (float)pow(1.12201845430196343559, gain);
+		c->rate = rate;
+		++k;
+	}
 
 	pctx->ext.version = SND_PCM_EXTPLUG_VERSION;
 	pctx->ext.name = "impulse";
@@ -297,6 +331,11 @@ SND_PCM_PLUGIN_DEFINE_FUNC(impulse) {
 	return 0;
 
 abort:
+	for(k = 0; k < MAX_CHN; ++k) {
+		if(pctx->c[k].impulse_data) {
+			fftwf_free(pctx->c[k].impulse_data);
+		}
+	}
 	free(pctx);
 	return ret;
 }

@@ -36,6 +36,8 @@ Limitations
 * No control mixer for toggling the filter on/off for now, patches
   welcome
 
+* Sub-par optimisation, FFTW wisdom could be cached, patches welcome
+
 * 16 channels maximum (can easily be increased in the code)
 
 * Only works with `FLOAT32` samples of native endianness, you will
@@ -65,18 +67,31 @@ Example configuration (`asoundrc`)
 The plugin requires (and assumes) impulse files are raw PCM data
 stored as 32-bit floats of native endianness. If your impulse files
 are in a different format, you can convert them with tools like
-`ffmpeg(1)`: `ffmpeg -i impulse.wav -f f32le impulse.raw`
+`ffmpeg(1)`: `ffmpeg -i impulse.wav -f f32le impulse.float32.pcm`
 
 ~~~
 pcm.impulse {
 	type impulse
 	slave { pcm "plughw:0" }
 
-	impulse_rate 44100
-	impulses [ "/path/to/left.pcm" "/path/to/right.pcm" ] # can add more for other channel layouts (LRC, etc.)
-	# empty string ("") can also be used to pass-through a particular channel
+	impulse.0 {
+		path "/path/to/left_channel.float32.pcm"
+		rate 44100
+		gain -20.0 # preamp gain in dB, optional (default 0.0 dB)
+	}
 
-	gain -15.0 # preamp gain in dB, optional (default -15.0 dB)
+	impulse.1 {
+		path "/path/to/right_channel.float32.pcm"
+		rate 44100
+		gain -20.0
+	}
+
+	# add more channels as needed...
+	#impulse.2 {
+	#	path "/path/to/center_channel.float32.pcm"
+	#	rate 44100
+	#	gain -20.0
+	#}
 }
 pcm.!default {
 	type plug
