@@ -54,6 +54,7 @@ struct channel_context {
 struct plugin_context {
 	snd_pcm_extplug_t ext;
 	const char* wisdom_path;
+	bool has_clipped;
 
 	struct channel_context c[MAX_CHN];
 };
@@ -92,6 +93,18 @@ static snd_pcm_sframes_t transfer_callback(snd_pcm_extplug_t* ext,
 		/* Update overlaps */
 		for(int i = 0; i < c->N; ++i) {
 			c->ring_buffer[(c->ring_buffer_position + i) % (c->N)] += c->pcm_data[i] * c->gain;
+		}
+
+		/* Show clipping warning (at most once) */
+		if(!pctx->has_clipped) {
+			for(int i = 0; i < size; ++i) {
+				float s = c->ring_buffer[(c->ring_buffer_position + i) % (c->N)];
+				if(s > 1.f || s < -1.f) {
+					pctx->has_clipped = true;
+					SNDERR("clipping frame %f, consider reducing gain", s);
+					break;
+				}
+			}
 		}
 
 		/* Give samples to ALSA */
