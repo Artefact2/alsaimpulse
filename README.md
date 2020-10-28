@@ -36,8 +36,6 @@ Limitations
 * No control mixer for toggling the filter on/off for now, patches
   welcome
 
-* Sub-par optimisation, FFTW wisdom could be cached, patches welcome
-
 * 16 channels maximum (can easily be increased in the code)
 
 * Only works with `FLOAT32` samples of native endianness, you will
@@ -73,6 +71,11 @@ are in a different format, you can convert them with tools like
 pcm.impulse {
 	type impulse
 	slave { pcm "plughw:0" }
+
+	# This is optional but increases CPU efficiency (except the very first time the plugin is loaded)
+	# Specified path must be writeable
+	# Recommended to delete the file after hardware changes / software upgrades
+	wisdom_path "/home/foo/.cache/alsa/impulse_wisdom"
 
 	impulse.0 {
 		path "/path/to/left_channel.float32.pcm"

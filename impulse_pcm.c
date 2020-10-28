@@ -15,6 +15,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#define _POSIX_C_SOURCE 200809L
+
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -49,6 +51,8 @@ struct channel_context {
 
 struct plugin_context {
 	snd_pcm_extplug_t ext;
+	const char* wisdom_path;
+
 	struct channel_context c[MAX_CHN];
 };
 
@@ -114,6 +118,7 @@ static snd_pcm_sframes_t transfer_callback(snd_pcm_extplug_t* ext,
 
 static int hw_params_callback(snd_pcm_extplug_t* ext, snd_pcm_hw_params_t* params) {
 	struct plugin_context* pctx = ext->private_data;
+	const int plan_opts = (pctx->wisdom_path && *(pctx->wisdom_path)) ? FFTW_MEASURE : FFTW_ESTIMATE;
 
 	snd_pcm_uframes_t psize;
 	int ret, dir;
@@ -156,9 +161,8 @@ static int hw_params_callback(snd_pcm_extplug_t* ext, snd_pcm_hw_params_t* param
 		memset(c->ring_buffer, 0, c->N * sizeof(float));
 		c->ring_buffer_position = 0;
 
-		/* XXX: use better heuristics and cache wisdom */
-		c->pcm_to_fft = fftwf_plan_dft_r2c_1d(c->N, c->pcm_data, c->pcm_fft, FFTW_ESTIMATE);
-		c->fft_to_pcm = fftwf_plan_dft_c2r_1d(c->N, c->pcm_fft, c->pcm_data, FFTW_ESTIMATE);
+		c->pcm_to_fft = fftwf_plan_dft_r2c_1d(c->N, c->pcm_data, c->pcm_fft, plan_opts);
+		c->fft_to_pcm = fftwf_plan_dft_c2r_1d(c->N, c->pcm_fft, c->pcm_data, plan_opts);
 
 		if(c->impulse_length < c->N) {
 			/* Reallocate impulse_data to length N, pad zith zeroes */
@@ -170,9 +174,13 @@ static int hw_params_callback(snd_pcm_extplug_t* ext, snd_pcm_hw_params_t* param
 			c->impulse_length = c->N;
 		}
 
-		fftwf_plan p = fftwf_plan_dft_r2c_1d(c->N, c->impulse_data, c->impulse_fft, FFTW_ESTIMATE);
+		fftwf_plan p = fftwf_plan_dft_r2c_1d(c->N, c->impulse_data, c->impulse_fft, plan_opts);
 		fftwf_execute(p);
 		fftwf_destroy_plan(p);
+	}
+
+	if(pctx->wisdom_path && *(pctx->wisdom_path) && fftwf_export_wisdom_to_filename(pctx->wisdom_path) != 1) {
+		SNDERR("failed saving wisdom to %s, continuing anyway", pctx->wisdom_path);
 	}
 
 	return 0;
@@ -208,6 +216,7 @@ SND_PCM_PLUGIN_DEFINE_FUNC(impulse) {
 	snd_config_t* slave = 0;
 	snd_config_t* impulses = 0;
 	int ret, k;
+	const char* wp = 0;
 
 	/* Parse main plugin options */
 	snd_config_for_each(i, next, conf) {
@@ -232,6 +241,12 @@ SND_PCM_PLUGIN_DEFINE_FUNC(impulse) {
 			}
 
 			impulses = n;
+			continue;
+		}
+
+		if(strcmp("wisdom_path", id) == 0) {
+			snd_config_get_string(n, &wp);
+			wp = strdup(wp);
 			continue;
 		}
 
@@ -321,6 +336,11 @@ SND_PCM_PLUGIN_DEFINE_FUNC(impulse) {
 	pctx->ext.callback = &callbacks;
 	pctx->ext.private_data = pctx;
 
+	pctx->wisdom_path = wp;
+	if(pctx->wisdom_path && *(pctx->wisdom_path) && fftwf_import_wisdom_from_filename(pctx->wisdom_path) != 1) {
+		SNDERR("failed loading wisdom from %s, continuing anyway", pctx->wisdom_path);
+	}
+
 	if((ret = snd_pcm_extplug_create(&(pctx->ext), name, root, slave, stream, mode)) < 0) goto abort;
 	*pcmp = pctx->ext.pcm;
 
@@ -336,6 +356,7 @@ abort:
 			fftwf_free(pctx->c[k].impulse_data);
 		}
 	}
+	if(pctx->wisdom_path) free((void*)pctx->wisdom_path);
 	free(pctx);
 	return ret;
 }
