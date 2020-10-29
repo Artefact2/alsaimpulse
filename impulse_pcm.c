@@ -193,9 +193,9 @@ static int hw_params_callback(snd_pcm_extplug_t* ext, snd_pcm_hw_params_t* param
 		}
 
 		if(c->N == 0) {
-			c->N = 1 << (int)ceilf(log2f(c->impulse_orig_length + psize + 1));
-		} else if(c->N < (c->impulse_orig_length + psize + 1)) {
-			SNDERR("fft_size too small, should be at least %d, expect subpar results", c->impulse_orig_length + psize + 1);
+			c->N = 1 << (int)ceilf(log2f(c->impulse_orig_length + psize - 1));
+		} else if(c->N < (c->impulse_orig_length + psize - 1)) {
+			SNDERR("fft_size too small, should be at least %d, expect subpar results", c->impulse_orig_length + psize - 1);
 		} else if(c->N & (c->N - 1)) {
 			SNDERR("fft_size not a power of two, expect subpar performance");
 		}
