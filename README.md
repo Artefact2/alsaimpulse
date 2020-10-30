@@ -15,7 +15,7 @@ Use cases
 =========
 
 * DRC (digital room correction: room EQ, house curves, etc.)
-* Other types of FIR filters (funny reverb effects)
+* Other types of FIR filters
 
 This plugin does not require the use of an ALSA loopback device. This
 is great for many reasons:
@@ -31,6 +31,26 @@ is great for many reasons:
 
 * No idle use of system resources (the device is normally closed when
   no application is playing audio).
+
+Generating impulses
+===================
+
+For DRC, you can generate impulses using software like
+[DRC-FIR](https://sourceforge.net/projects/drc-fir/) (libre) or
+[REW](https://www.roomeqwizard.com/) (proprietary).
+
+For more general-purpose filters, you can generate impulses with
+ffmpeg's [sinc source](https://ffmpeg.org/ffmpeg-filters.html#sinc)
+(among others):
+
+~~~
+# generate a 100 Hz highpass filter impulse at 44100 Hz sample rate
+ffmpeg -f lavfi -i sinc=r=44100:hp=1000 -f f32le highpass_impulse.float32.pcm
+~~~
+
+Finally, you can also reuse impulses available online, some of which
+can be found on [zconvolver's
+homepage](https://x42-plugins.com/x42/x42-zconvolver).
 
 Limitations
 ===========
