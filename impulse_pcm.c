@@ -55,6 +55,7 @@ struct plugin_context {
 	snd_pcm_extplug_t ext;
 	const char* wisdom_path;
 	bool has_clipped;
+	int psize;
 
 	struct channel_context c[MAX_CHN];
 };
@@ -64,6 +65,14 @@ static snd_pcm_sframes_t transfer_callback(snd_pcm_extplug_t* ext,
 										   const snd_pcm_channel_area_t* src_areas, snd_pcm_uframes_t src_offset,
 										   snd_pcm_uframes_t size) {
 	struct plugin_context* pctx = ext->private_data;
+
+	if(size > pctx->psize) {
+		/* Filling multiple periods/fragments at once */
+		for(snd_pcm_uframes_t off = 0; off < size; off += pctx->psize) {
+			transfer_callback(ext, dst_areas, dst_offset + off, src_areas, src_offset + off, pctx->psize);
+		}
+		return size;
+	}
 
 	for(int i = 0; i < ext->channels; ++i) {
 		struct channel_context* c = &(pctx->c[i]);
@@ -144,6 +153,7 @@ static int hw_params_callback(snd_pcm_extplug_t* ext, snd_pcm_hw_params_t* param
 		SNDERR("could not query max period size");
 		return -EINVAL;
 	}
+	pctx->psize = psize;
 
 	for(int i = 0; i < MAX_CHN; ++i) {
 		struct channel_context* c = &(pctx->c[i]);
