@@ -67,11 +67,9 @@ static snd_pcm_sframes_t transfer_callback(snd_pcm_extplug_t* ext,
 	struct plugin_context* pctx = ext->private_data;
 
 	if(size > pctx->psize) {
-		/* Filling multiple periods/fragments at once */
-		for(snd_pcm_uframes_t off = 0; off < size; off += pctx->psize) {
-			transfer_callback(ext, dst_areas, dst_offset + off, src_areas, src_offset + off, pctx->psize);
-		}
-		return size;
+		/* Do not process more than max period size to avoid buffer overruns */
+		/* ALSA can deal with a partially fullfilled transfer just fine */
+		size = pctx->psize;
 	}
 
 	for(int i = 0; i < ext->channels; ++i) {

@@ -45,7 +45,7 @@ ffmpeg's [sinc source](https://ffmpeg.org/ffmpeg-filters.html#sinc)
 
 ~~~
 # generate a 100 Hz highpass filter impulse at 44100 Hz sample rate
-ffmpeg -f lavfi -i sinc=r=44100:hp=1000 -f f32le highpass_impulse.float32.pcm
+ffmpeg -f lavfi -i sinc=r=44100:hp=100 -f f32le highpass_impulse.float32.pcm
 ~~~
 
 Finally, you can also reuse impulses available online, some of which
