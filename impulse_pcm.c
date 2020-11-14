@@ -55,7 +55,7 @@ struct plugin_context {
 	snd_pcm_extplug_t ext;
 	const char* wisdom_path;
 	bool has_clipped;
-	int psize;
+	unsigned int psize, tsize; /* maximum period size, maximum transferrable size */
 
 	struct channel_context c[MAX_CHN];
 };
@@ -66,10 +66,9 @@ static snd_pcm_sframes_t transfer_callback(snd_pcm_extplug_t* ext,
 										   snd_pcm_uframes_t size) {
 	struct plugin_context* pctx = ext->private_data;
 
-	if(size > pctx->psize) {
-		/* Do not process more than max period size to avoid buffer overruns */
-		/* ALSA can deal with a partially fullfilled transfer just fine */
-		size = pctx->psize;
+	if(size > pctx->tsize) {
+		/* Avoid buffer overruns, ALSA can deal with a partially fullfilled transfer just fine */
+		size = pctx->tsize;
 	}
 
 	for(int i = 0; i < ext->channels; ++i) {
@@ -152,6 +151,7 @@ static int hw_params_callback(snd_pcm_extplug_t* ext, snd_pcm_hw_params_t* param
 		return -EINVAL;
 	}
 	pctx->psize = psize;
+	pctx->tsize = -1;
 
 	for(int i = 0; i < MAX_CHN; ++i) {
 		struct channel_context* c = &(pctx->c[i]);
@@ -227,6 +227,10 @@ static int hw_params_callback(snd_pcm_extplug_t* ext, snd_pcm_hw_params_t* param
 			fftwf_free(c->impulse_data);
 			c->impulse_data = imp;
 			c->impulse_length = c->N;
+		}
+
+		if(pctx->tsize > c->N + 1 - c->impulse_orig_length) {
+			pctx->tsize = c->N + 1 - c->impulse_orig_length;
 		}
 
 		fftwf_plan p = fftwf_plan_dft_r2c_1d(c->N, c->impulse_data, c->impulse_fft, plan_opts);
