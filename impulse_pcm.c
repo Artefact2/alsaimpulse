@@ -60,6 +60,15 @@ struct plugin_context {
 	struct channel_context c[MAX_CHN];
 };
 
+static void add_overlap(float* restrict dest, const float* restrict src, size_t len, off_t dest_offset, float mul) {
+	for(size_t i = dest_offset; i < len; ++i) {
+		dest[i] += *(src++) * mul;
+	}
+	for(size_t i = 0; i < dest_offset; ++i) {
+		dest[i] += *(src++) * mul;
+	}
+}
+
 static snd_pcm_sframes_t transfer_callback(snd_pcm_extplug_t* ext,
 										   const snd_pcm_channel_area_t* dst_areas, snd_pcm_uframes_t dst_offset,
 										   const snd_pcm_channel_area_t* src_areas, snd_pcm_uframes_t src_offset,
@@ -97,9 +106,7 @@ static snd_pcm_sframes_t transfer_callback(snd_pcm_extplug_t* ext,
 		fftwf_execute(c->fft_to_pcm);
 
 		/* Update overlaps */
-		for(int i = 0; i < c->N; ++i) {
-			c->ring_buffer[(c->ring_buffer_position + i) % (c->N)] += c->pcm_data[i] * c->gain;
-		}
+		add_overlap(c->ring_buffer, c->pcm_data, c->N, c->ring_buffer_position, c->gain);
 
 		/* Show clipping warning (at most once) */
 		if(!pctx->has_clipped) {
