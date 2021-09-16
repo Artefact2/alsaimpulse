@@ -8,9 +8,6 @@ FFTW is used with the [overlap-add
 method](https://en.wikipedia.org/wiki/Overlap%E2%80%93add_method) to
 convolve the two signals in reasonable CPU time.
 
-**CONSIDER THIS PLUGIN EXPERIMENTAL** until the maths have been
-checked out by someone who knows what they are doing.
-
 Use cases
 =========
 
@@ -40,8 +37,8 @@ For DRC, you can generate impulses using software like
 [REW](https://www.roomeqwizard.com/) (proprietary).
 
 For more general-purpose filters, you can generate impulses with
-ffmpeg's [sinc source](https://ffmpeg.org/ffmpeg-filters.html#sinc)
-(among others):
+[rePhase](https://rephase.org/) (proprietary) or ffmpeg's [sinc
+source](https://ffmpeg.org/ffmpeg-filters.html#sinc) (among others):
 
 ~~~
 # generate a 100 Hz highpass filter impulse at 44100 Hz sample rate
@@ -128,6 +125,11 @@ pcm.!default {
 See also
 ========
 
+* [pipewire](https://gitlab.freedesktop.org/pipewire/pipewire/-/wikis/home)
+  has a convolver plugin that can be used in [filter
+  chains](https://gitlab.freedesktop.org/pipewire/pipewire/-/blob/master/src/daemon/filter-chain/sink-virtual-surround-5.1-kemar.conf),
+  works with all ALSA/PulseAudio/JACK programs
+
 * [BruteFIR](https://torger.se/anders/brutefir.html) and
   [CamillaDSP](https://github.com/HEnquist/camilladsp), both of which
   can do convolution filters in real-ish time using a loopback device
@@ -135,10 +137,6 @@ See also
 * [alsaloudness](https://github.com/dpapavas/alsaloudness), a
   loudness-compensated volume control for ALSA, must-have if you are
   listening at low SPLs
-
-* [ir.lv2](https://tomszilagyi.github.io/plugins/ir.lv2/) and
-  [zeroconvo.lv2](https://github.com/x42/zconvo.lv2), which might be
-  more adequate for hard real-time processing with JACK
 
 Licence
 =======
